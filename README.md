@@ -42,7 +42,7 @@ Deleting secret test-cr-sre-console-url
 
 ### AWS Account CR status patch
 
-`set` command enables you to patch Account CR status directly. 
+`set` command enables you to patch Account CR status directly.
 
 There are two ways of status patching:
 
@@ -52,7 +52,7 @@ There are two ways of status patching:
 osd-utils-cli set test-cr --state=Creating -r=true
 ```
 
-2. Using raw data. For patch strategy, only `merge` and `json` are supported. The default is `merge`. 
+2. Using raw data. For patch strategy, only `merge` and `json` are supported. The default is `merge`.
 
 ```bash
 osd-utils-cli set test-cr --patch='{"status":{"state": "Failed", "claimed": false}}'

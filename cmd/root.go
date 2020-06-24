@@ -25,7 +25,7 @@ func init() {
 	NewCmdRoot(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr})
 }
 
-// rootCmd represents the base command when called without any subcommands
+// NewCmdRoot represents the base command when called without any subcommands
 func NewCmdRoot(streams genericclioptions.IOStreams) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:               "osd-utils-cli",
