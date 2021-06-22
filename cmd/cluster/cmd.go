@@ -9,16 +9,14 @@ import (
 func NewCmdCluster(streams genericclioptions.IOStreams, flags *genericclioptions.ConfigFlags) *cobra.Command {
 	clusterCmd := &cobra.Command{
 		Use:               "cluster",
-		Short:             "Provides vitals of an AWS cluster",
 		Args:              cobra.NoArgs,
 		DisableAutoGenTag: true,
-		Run:               help,
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
 	}
 
 	clusterCmd.AddCommand(newCmdHealth(streams, flags))
+	clusterCmd.AddCommand(newCmdMustGather(streams, flags)) // capture must-gather
 	return clusterCmd
-}
-
-func help(cmd *cobra.Command, _ []string) {
-	cmd.Help()
 }
