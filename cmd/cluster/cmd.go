@@ -3,12 +3,14 @@ package cluster
 import (
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // NewCmdClusterHealth implements the base cluster health command
 func NewCmdCluster(streams genericclioptions.IOStreams, flags *genericclioptions.ConfigFlags) *cobra.Command {
 	clusterCmd := &cobra.Command{
 		Use:               "cluster",
+		Short:             "cluster related utilities",
 		Args:              cobra.NoArgs,
 		DisableAutoGenTag: true,
 		Run: func(cmd *cobra.Command, args []string) {
