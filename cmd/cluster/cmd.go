@@ -3,7 +3,6 @@ package cluster
 import (
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // NewCmdClusterHealth implements the base cluster health command
