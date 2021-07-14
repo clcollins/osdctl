@@ -7,11 +7,14 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type mustGatherOptions struct {
-	k8sclusterresourcefactory k8spkg.ClusterResourceFactoryOptions
+	flags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
+	k8sclient                 client.Client
+	k8sclusterresourcefactory k8spkg.ClusterResourceFactoryOptions
 }
 
 // newCmdMustGather implements the mustGather command
@@ -49,6 +52,23 @@ func newMustGatherOptions(streams genericclioptions.IOStreams, flags *genericcli
 
 func (o *mustGatherOptions) run() error {
 	fmt.Printf("+%v", o)
+
+	return nil
+}
+
+func (o *mustGatherOptions) complete(cmd *cobra.Command, _ []string) error {
+	fmt.Printf("%+v", o.flags.Context)
+	k8svalid, err := o.k8sclusterresourcefactory.ValidateIdentifiers()
+	if !k8svalid {
+		if err != nil {
+			return err
+		}
+	}
+
+	// o.kubeCli, err = k8s.NewClient(o.flags)
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }
