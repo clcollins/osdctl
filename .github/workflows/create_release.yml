@@ -12,8 +12,7 @@ jobs:
     name: create_release_on_tag
     runs-on: ubuntu-latest
     permissions:
-      repository projects: write
-
+      repository-projects: write
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v2.3.3
