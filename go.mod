@@ -25,6 +25,7 @@ require (
 	github.com/openshift/hive/apis v0.0.0
 	github.com/openshift/osd-network-verifier v0.1.1-0.20221209180454-dfb584543d46
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
+	github.com/rodaine/table v1.1.0
 	github.com/shopspring/decimal v1.2.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.1

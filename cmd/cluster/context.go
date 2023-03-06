@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,12 +16,14 @@ import (
 	jira "github.com/andygrunwald/go-jira"
 	"github.com/aws/aws-sdk-go/service/cloudtrail"
 	"github.com/openshift-online/ocm-cli/pkg/dump"
+	sdk "github.com/openshift-online/ocm-sdk-go"
 	"github.com/openshift/osdctl/cmd/servicelog"
 	sl "github.com/openshift/osdctl/internal/servicelog"
 	"github.com/openshift/osdctl/pkg/osdCloud"
 	"github.com/openshift/osdctl/pkg/osdctlConfig"
 	"github.com/openshift/osdctl/pkg/printer"
 	"github.com/openshift/osdctl/pkg/utils"
+	"github.com/rodaine/table"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
@@ -45,10 +48,11 @@ type contextOptions struct {
 }
 
 const (
+	jiraHost                      = "https://issues.redhat.com"
 	JiraTokenConfigKey            = "jira_token"
+	JiraTokenRegistrationUrl      = "https://issues.redhat.com/secure/ViewProfile.jspa?selectedTab=com.atlassian.pats.pats-plugin:jira-user-personal-access-tokens"
 	PagerDutyOauthTokenConfigKey  = "pd_oauth_token"
 	PagerDutyUserTokenConfigKey   = "pd_user_token"
-	JiraTokenRegistrationUrl      = "https://issues.redhat.com/secure/ViewProfile.jspa?selectedTab=com.atlassian.pats.pats-plugin:jira-user-personal-access-tokens"
 	PagerDutyTokenRegistrationUrl = "https://martindstone.github.io/PDOAuth/"
 )
 
@@ -93,14 +97,14 @@ func (o *contextOptions) complete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create OCM client to talk to cluster API
-	ocmClient := utils.CreateConnection()
+	ocmConnection := utils.CreateConnection()
 	defer func() {
-		if err := ocmClient.Close(); err != nil {
+		if err := ocmConnection.Close(); err != nil {
 			fmt.Printf("Cannot close the ocmClient (possible memory leak): %q", err)
 		}
 	}()
 
-	clusters := utils.GetClusters(ocmClient, args)
+	clusters := utils.GetClusters(ocmConnection, args)
 	if len(clusters) != 1 {
 		return fmt.Errorf("unexpected number of clusters matched input. Expected 1 got %d", len(clusters))
 	}
@@ -112,7 +116,7 @@ func (o *contextOptions) complete(cmd *cobra.Command, args []string) error {
 	o.externalID = cluster.ExternalID()
 	o.infraID = cluster.InfraID()
 
-	orgID, err := utils.GetOrgfromClusterID(ocmClient, *cluster)
+	orgID, err := utils.GetOrgfromClusterID(ocmConnection, *cluster)
 	if err != nil {
 		fmt.Printf("Failed to get Org ID for cluster ID %s - err: %q", o.clusterID, err)
 		o.organizationID = ""
@@ -125,53 +129,55 @@ func (o *contextOptions) complete(cmd *cobra.Command, args []string) error {
 
 func (o *contextOptions) run() error {
 
-	connection := utils.CreateConnection()
-	defer connection.Close()
+	ocmConnection := utils.CreateConnection()
+	defer ocmConnection.Close()
 
-	err := printClusterInfo(o.clusterID)
+	jiraClient, err := createJiraClient()
+
+	// err = printClusterInfo(o.clusterID)
+	// if err != nil {
+	// 	return err
+	// }
+
+	cluster, err := utils.GetCluster(ocmConnection, o.clusterID)
+	cluster.
+
+		// Check support status of cluster
+		err = o.printSupportStatus(ocmConnection)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't print cluster info: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
-	limitedSupportReasons, err := utils.GetClusterLimitedSupportReasons(connection, o.clusterID)
+	// Print support exceptions
+	err = o.printSupportExceptions(jiraClient)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't retrieve cluster limited support reasons: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Check support status of cluster
-	err = printSupportStatus(limitedSupportReasons)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't print support status: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	// Print the Servicelogs for this cluster
 	err = o.printServiceLogs()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't print service logs: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
-	err = o.printJiraCards()
+	err = o.printJiraCards(jiraClient)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't print jira cards: %v\n", err)
+		return err
 	}
 
-	// Print all triggered and acknowledged pd alerts
-	err = o.printPDAlerts()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't print pagerduty alerts: %v\n", err)
-		// Here we don't actually want to error out, this is to ensure that even if we don't have the
-		// pd auth setup, we can still get the rest of the output.
-	}
+	// // Print all triggered and acknowledged pd alerts
+	// err = o.printPDAlerts()
+	// if err != nil {
+	// 	fmt.Fprintf(os.Stderr, "Can't print pagerduty alerts: %v\n", err)
+	// 	// Here we don't actually want to error out, this is to ensure that even if we don't have the
+	// 	// pd auth setup, we can still get the rest of the output.
+	// }
 
-	// Print other helpful links
-	err = o.printOtherLinks()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't print other links: %v\n", err)
-	}
+	// // Print other helpful links
+	// err = o.printOtherLinks()
+	// if err != nil {
+	// 	fmt.Fprintf(os.Stderr, "Can't print other links: %v\n", err)
+	// }
 
 	if o.full {
 		err = o.printCloudTrailLogs()
@@ -191,11 +197,6 @@ func (o *contextOptions) run() error {
 }
 
 func printClusterInfo(clusterID string) error {
-
-	fmt.Println("============================================================")
-	fmt.Println("Cluster Info")
-	fmt.Println("============================================================")
-
 	cmd := "ocm describe cluster " + clusterID
 	output, err := exec.Command("bash", "-c", cmd).Output()
 	if err != nil {
@@ -209,32 +210,37 @@ func printClusterInfo(clusterID string) error {
 }
 
 // printSupportStatus reports if a cluster is in limited support or fully supported.
-func printSupportStatus(limitedSupportReasons []*utils.LimitedSupportReasonItem) error {
+func (o *contextOptions) printSupportStatus(conn *sdk.Connection) error {
 
-	fmt.Println("============================================================")
-	fmt.Println("Limited Support Status")
-	fmt.Println("============================================================")
+	var r result
+	r.service = "Support Status and Exceptions"
+	defer r.printResult()
 
-	// No reasons found, cluster is fully supported
+	limitedSupportReasons, err := utils.GetClusterLimitedSupportReasons(conn, o.clusterID)
+	if err != nil {
+		return err
+	}
+
 	if len(limitedSupportReasons) == 0 {
-		fmt.Printf("Cluster is fully supported\n")
-		fmt.Println()
-		return nil
+		r.context = "Cluster is fully supported"
+	} else {
+		r.context = "Cluster has Limited Support"
 	}
 
-	table := printer.NewTablePrinter(os.Stdout, 20, 1, 3, ' ')
-	table.AddRow([]string{"Reason ID", "Summary", "Details"})
+	r.columns = []string{"ID", "Summary", "Details"}
 	for _, clusterLimitedSupportReason := range limitedSupportReasons {
-		table.AddRow([]string{clusterLimitedSupportReason.ID, clusterLimitedSupportReason.Summary, clusterLimitedSupportReason.Details})
+		r.items = append(r.items, []string{clusterLimitedSupportReason.ID, clusterLimitedSupportReason.Summary, clusterLimitedSupportReason.Details})
 	}
-	// Add empty row for readability
-	table.AddRow([]string{})
-	table.Flush()
 
 	return nil
 }
 
+// printServiceLogs prints a list of servicelogs for the cluster
 func (o *contextOptions) printServiceLogs() error {
+
+	var r result
+	r.service = "Service Logs"
+	defer r.printResult()
 
 	// Get the SLs for the cluster
 	slResponse, err := servicelog.FetchServiceLogs(o.clusterID)
@@ -245,8 +251,7 @@ func (o *contextOptions) printServiceLogs() error {
 	var serviceLogs sl.ServiceLogShortList
 	err = json.Unmarshal(slResponse.Bytes(), &serviceLogs)
 	if err != nil {
-		fmt.Printf("Failed to unmarshal the SL response %q\n", err)
-		return err
+		return fmt.Errorf("Failed to unmarshal the SL response: %v", err)
 	}
 
 	// Parsing the relevant servicelogs
@@ -261,10 +266,6 @@ func (o *contextOptions) printServiceLogs() error {
 		errorServiceLogs = append(errorServiceLogs, serviceLog)
 	}
 
-	fmt.Println("============================================================")
-	fmt.Println("Service Logs sent in the past", o.days, "Days")
-	fmt.Println("============================================================")
-
 	if o.verbose {
 		marshalledSLs, err := json.MarshalIndent(errorServiceLogs, "", "  ")
 		if err != nil {
@@ -272,12 +273,11 @@ func (o *contextOptions) printServiceLogs() error {
 		}
 		dump.Pretty(os.Stdout, marshalledSLs)
 	} else {
-		// Non verbose only prints the summaries
+		r.columns = []string{"#", "Summary", "Created"}
 		for i, errorServiceLog := range errorServiceLogs {
-			fmt.Printf("%d. %s (%s)\n", i, errorServiceLog.Summary, errorServiceLog.CreatedAt.Format(time.RFC3339))
+			r.items = append(r.items, []string{fmt.Sprint(i), errorServiceLog.Summary, errorServiceLog.CreatedAt.Format(time.RFC3339)})
 		}
 	}
-	fmt.Println()
 
 	return nil
 }
@@ -330,6 +330,13 @@ func getPDSeviceID(pdClient *pd.Client, ctx context.Context, baseDomain string) 
 }
 
 func printCurrentPDAlerts(pdClient *pd.Client, ctx context.Context, serviceID string) error {
+	fmt.Println("============================================================")
+	fmt.Println("Current Pagerduty Alerts for the Cluster")
+	fmt.Println("============================================================")
+	fmt.Println()
+	fmt.Printf("Link to PD Service: https://redhat.pagerduty.com/service-directory/%s\n", serviceID)
+	fmt.Println()
+
 	liResponse, err := pdClient.ListIncidentsWithContext(
 		ctx,
 		pd.ListIncidentsOptions{
@@ -343,39 +350,32 @@ func printCurrentPDAlerts(pdClient *pd.Client, ctx context.Context, serviceID st
 		return err
 	}
 
-	fmt.Println("============================================================")
-	fmt.Println("Current Pagerduty Alerts for the Cluster")
-	fmt.Println("============================================================")
-	fmt.Printf("Link to PD Service: https://redhat.pagerduty.com/service-directory/%s\n", serviceID)
-	table := printer.NewTablePrinter(os.Stdout, 20, 1, 3, ' ')
-	table.AddRow([]string{"Urgency", "Title", "Created At"})
+	if len(liResponse.Incidents) == 0 {
+		fmt.Println("")
+	}
+
+	tbl := table.New("Urgency", "Title", "Created")
 	for _, incident := range liResponse.Incidents {
-		table.AddRow([]string{incident.Urgency, incident.Title, incident.CreatedAt})
+		tbl.AddRow([]string{incident.Urgency, incident.Title, incident.CreatedAt})
 	}
-	// Add empty row for readability
-	table.AddRow([]string{})
-	err = table.Flush()
-	if err != nil {
-		fmt.Println("error while flushing table: ", err.Error())
-		return err
-	}
+	tbl.Print()
 	return nil
 }
 
 func printHistoricalPDAlertSummary(pdClient *pd.Client, ctx context.Context, serviceID string) error {
 
-	fmt.Println()
 	fmt.Println("============================================================")
 	fmt.Println("Historical Pagerduty Alert Summary")
 	fmt.Println("============================================================")
+	fmt.Println()
 	fmt.Printf("Link to PD Service: https://redhat.pagerduty.com/service-directory/%s\n", serviceID)
+	fmt.Println()
 
 	var currentOffset uint
 	var limit uint = 100
 	var incidents []pd.Incident
-	fmt.Println("Pulling historical pd data")
+
 	for currentOffset = 0; true; currentOffset += limit {
-		print(".")
 		// pd defaults pulling the past month of data, which is enough for us to work with
 		liResponse, err := pdClient.ListIncidentsWithContext(
 			ctx,
@@ -406,9 +406,6 @@ func printHistoricalPDAlertSummary(pdClient *pd.Client, ctx context.Context, ser
 	}
 
 	incidentCounter := make(map[string]*occurrenceTracker)
-
-	table := printer.NewTablePrinter(os.Stdout, 20, 1, 3, ' ')
-	table.AddRow([]string{"Type", "Count", "Last Occurrence"})
 
 	var incidentKeys []string
 	for _, incident := range incidents {
@@ -455,17 +452,13 @@ func printHistoricalPDAlertSummary(pdClient *pd.Client, ctx context.Context, ser
 		return incidentCounter[incidentKeys[i]].incidentCount > incidentCounter[incidentKeys[j]].incidentCount
 	})
 
+	tbl := table.New("Type", "Count", "Last Occurrence")
+
 	for _, k := range incidentKeys {
-		table.AddRow([]string{k, strconv.Itoa(incidentCounter[k].incidentCount), incidentCounter[k].lastOccurrence})
+		tbl.AddRow([]string{k, strconv.Itoa(incidentCounter[k].incidentCount), incidentCounter[k].lastOccurrence})
 	}
 
-	// Add empty row for readability
-	table.AddRow([]string{})
-	err := table.Flush()
-	if err != nil {
-		fmt.Println("error while flushing table: ", err.Error())
-		return err
-	}
+	tbl.Print()
 
 	totalIncidents := len(incidents)
 	oldestIncidentTimestamp, err := time.Parse(time.RFC3339, incidents[totalIncidents-1].CreatedAt)
@@ -479,10 +472,9 @@ func printHistoricalPDAlertSummary(pdClient *pd.Client, ctx context.Context, ser
 	return nil
 }
 
-func (o *contextOptions) printJiraCards() error {
-
+func createJiraClient() (*jira.Client, error) {
 	if !viper.IsSet(JiraTokenConfigKey) {
-		return fmt.Errorf("key %s is not set in config file", JiraTokenConfigKey)
+		return nil, fmt.Errorf("key %s is not set in config file", JiraTokenConfigKey)
 	}
 
 	jiratoken := viper.GetString(JiraTokenConfigKey)
@@ -491,18 +483,20 @@ func (o *contextOptions) printJiraCards() error {
 		Token: jiratoken,
 	}
 
-	jiraClient, _ := jira.NewClient(tp.Client(), "https://issues.redhat.com/")
-
-	o.printJIRAOHSS(jiraClient)
-
-	if o.organizationID != "" {
-		o.printJIRASupportExceptions(jiraClient)
+	jiraClient, err := jira.NewClient(tp.Client(), jiraHost)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	return jiraClient, nil
 }
 
-func (o *contextOptions) printJIRAOHSS(jiraClient *jira.Client) error {
+func (o *contextOptions) printJiraCards(client *jira.Client) error {
+
+	var r result
+	r.service = "OHSS Cards"
+	defer r.printResult()
+
 	jql := fmt.Sprintf(
 		`(project = "OpenShift Hosted SRE Support" AND "Cluster ID" ~ "%s") 
 		OR (project = "OpenShift Hosted SRE Support" AND "Cluster ID" ~ "%s") 
@@ -511,31 +505,35 @@ func (o *contextOptions) printJIRAOHSS(jiraClient *jira.Client) error {
 		o.clusterID,
 	)
 
-	issues, _, err := jiraClient.Issue.Search(jql, nil)
+	issues, _, err := client.Issue.Search(jql, nil)
 	if err != nil {
-		fmt.Printf("Failed to search for jira issues %q\n", err)
-		return err
+		return fmt.Errorf("Failed getting Jira issues: %q\n", err)
 	}
 
-	fmt.Println()
-	fmt.Println("============================================================")
-	fmt.Println("Cluster OHSS Cards")
-	fmt.Println("============================================================")
+	r.columns = []string{"Key", "Fields", "Priority", "Summary", "Status", "Link"}
 
 	for _, i := range issues {
-		fmt.Printf("[%s](%s/%s): %+v [Status: %s]\n", i.Key, i.Fields.Type.Name, i.Fields.Priority.Name, i.Fields.Summary, i.Fields.Status.Name)
-		fmt.Printf("- Link: https://issues.redhat.com/browse/%s\n\n", i.Key)
-	}
-
-	if len(issues) == 0 {
-		fmt.Println("No OHSS Cards found")
-		fmt.Println()
+		r.items = append(r.items, []string{
+			i.Key,
+			i.Fields.Type.Name,
+			i.Fields.Priority.Name,
+			i.Fields.Summary, i.Fields.Status.Name,
+			fmt.Sprintf("https://issues.redhat.com/browse/%s\n\n", i.Key),
+		})
 	}
 
 	return nil
 }
 
-func (o *contextOptions) printJIRASupportExceptions(jiraClient *jira.Client) error {
+func (o *contextOptions) printSupportExceptions(jiraClient *jira.Client) error {
+
+	var r result
+	defer r.printResult()
+
+	if o.organizationID == "" {
+		return errors.New("No Organization ID specified for cluster")
+	}
+
 	jql := fmt.Sprintf(
 		`project = "Support Exceptions" AND type = Story AND Status = Approved AND
 		 Resolution = Unresolved AND "Customer Name" ~ "%s"`,
@@ -548,18 +546,16 @@ func (o *contextOptions) printJIRASupportExceptions(jiraClient *jira.Client) err
 		return err
 	}
 
-	fmt.Println()
-	fmt.Println("============================================================")
-	fmt.Println("Cluster Org Support Exception")
-	fmt.Println("============================================================")
-	for _, i := range issues {
-		fmt.Printf("[%s](%s/%s): %+v [Status: %s]\n", i.Key, i.Fields.Type.Name, i.Fields.Priority.Name, i.Fields.Summary, i.Fields.Status.Name)
-		fmt.Printf("- Link: https://issues.redhat.com/browse/%s\n\n", i.Key)
-	}
+	r.columns = []string{"Key", "Fields", "Priority", "Summary", "Status", "Link"}
 
-	if len(issues) == 0 {
-		fmt.Println("No Support Exceptions found")
-		fmt.Println()
+	for _, i := range issues {
+		r.items = append(r.items, []string{
+			i.Key,
+			i.Fields.Type.Name,
+			i.Fields.Priority.Name,
+			i.Fields.Summary, i.Fields.Status.Name,
+			fmt.Sprintf("https://issues.redhat.com/browse/%s\n\n", i.Key),
+		})
 	}
 
 	return nil
@@ -596,9 +592,11 @@ func (o *contextOptions) printPDAlerts() error {
 }
 
 func (o *contextOptions) printOtherLinks() error {
+
 	fmt.Println("============================================================")
 	fmt.Println("External resources containing related cluster data")
 	fmt.Println("============================================================")
+
 	fmt.Printf("Link to Splunk audit logs (set time in Splunk): https://osdsecuritylogs.splunkcloud.com/en-US/app/search/search?q=search%%20index%%3D%%22openshift_managed_audit%%22%%20clusterid%%3D%%22%s%%22\n\n", o.infraID)
 	fmt.Printf("Link to OHSS tickets: https://issues.redhat.com/issues/?jql=project%%20%%3D%%20OHSS%%20and%%20(%%22Cluster%%20ID%%22%%20~%%20%%20%%22%s%%22%%20OR%%20%%22Cluster%%20ID%%22%%20~%%20%%22%s%%22)\n\n", o.clusterID, o.externalID)
 	fmt.Printf("Link to CCX dashboard: https://kraken.psi.redhat.com/clusters/%s\n\n", o.externalID)
@@ -683,4 +681,54 @@ func skippableEvent(eventName string) bool {
 		}
 	}
 	return false
+}
+
+type result struct {
+	// the name of the service being checked
+	service string
+	// the column headers to include in the results
+	columns []string
+	// The results themselves
+	// as a slice of a slice of strings
+	items [][]string
+	// Any contextual info that needs to be added
+	context string
+}
+
+// makeInterface converts a []string to an interface
+func makeInterface(s []string) []interface{} {
+	i := make([]interface{}, len(s))
+	for x := range s {
+		i[x] = s[x]
+	}
+	return i
+}
+
+// printResult returns results in a standardized, easy to read format
+func (r *result) printResult() {
+	if r.service != "" {
+		fmt.Println(r.service)
+		fmt.Println(strings.Repeat("-", len(r.service)))
+		// This will print a newline if there's not a hidden service name
+		// eg: Support Exceptions, that are included in Support Status
+		defer fmt.Println()
+	}
+
+	// Exit if we have nothing to print
+	if len(r.items) != 0 {
+
+		tbl := table.New(makeInterface(r.columns)...)
+
+		for _, item := range r.items {
+			tbl.AddRow(makeInterface(item)...)
+		}
+
+		tbl.Print()
+	}
+
+	if r.context != "" {
+		fmt.Println(r.context)
+	}
+
+	return
 }
