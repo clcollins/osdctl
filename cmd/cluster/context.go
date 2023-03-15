@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -134,16 +133,13 @@ func (o *contextOptions) run() error {
 
 	jiraClient, err := createJiraClient()
 
-	// err = printClusterInfo(o.clusterID)
-	// if err != nil {
-	// 	return err
-	// }
+	err = o.printClusterInfo(ocmConnection)
+	if err != nil {
+		return err
+	}
 
-	cluster, err := utils.GetCluster(ocmConnection, o.clusterID)
-	cluster.
-
-		// Check support status of cluster
-		err = o.printSupportStatus(ocmConnection)
+	// Check support status of cluster
+	err = o.printSupportStatus(ocmConnection)
 	if err != nil {
 		return err
 	}
@@ -179,32 +175,39 @@ func (o *contextOptions) run() error {
 	// 	fmt.Fprintf(os.Stderr, "Can't print other links: %v\n", err)
 	// }
 
-	if o.full {
-		err = o.printCloudTrailLogs()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Can't print cloudtrail: %v\n", err)
-			os.Exit(1)
-		}
-	} else {
-		fmt.Println()
-		fmt.Println("============================================================")
-		fmt.Println("CloudTrail events for the Cluster")
-		fmt.Println("============================================================")
-		fmt.Println("Not polling cloudtrail logs, use --full flag to do so (must be logged into the correct hive to work).")
-	}
+	err = o.printCloudTrailLogs()
 
 	return nil
 }
 
-func printClusterInfo(clusterID string) error {
-	cmd := "ocm describe cluster " + clusterID
-	output, err := exec.Command("bash", "-c", cmd).Output()
+func (o *contextOptions) printClusterInfo(conn *sdk.Connection) error {
+	var r result
+	defer r.printResult()
+
+	c, err := utils.GetCluster(conn, o.clusterID)
 	if err != nil {
-		fmt.Println(string(output))
-		fmt.Print(err)
 		return err
 	}
-	fmt.Println(string(output))
+
+	fmt.Printf("+%v", c)
+
+	r.columns = []string{"", ""}
+	r.items = append(r.items, []string{"ID:", c.ID()})
+	r.items = append(r.items, []string{"External ID:", c.ExternalID()})
+	r.items = append(r.items, []string{"Name:", c.Name()})
+
+	if !o.full {
+
+		r.context = fmt.Sprintf("\n") +
+			fmt.Sprintf("| %s | %s | %s | %s |\n", c.State(), c.API().Listening(), c.Product().ID(), c.OpenshiftVersion()) +
+			fmt.Sprintf("| %s | %s |", c.CloudProvider().ID(), c.Region().ID())
+
+		return nil
+	}
+
+	r.items = append(r.items, []string{"State:", string(c.State())})
+
+	fmt.Printf("%+v", c)
 
 	return nil
 }
