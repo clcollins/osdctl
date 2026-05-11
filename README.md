@@ -10,6 +10,12 @@ Currently, it mainly supports related work for AWS, especially [aws-account-oper
 
 ## Installation
 
+### MacOS
+
+```
+$ brew install osdctl
+```
+
 ### Build from source
 
 #### Requirements
