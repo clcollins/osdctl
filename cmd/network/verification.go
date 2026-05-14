@@ -107,6 +107,8 @@ type EgressVerification struct {
 	SkipServiceLog bool
 	// hiveOcmUrl is the OCM environment URL for Hive operations (Classic clusters only)
 	hiveOcmUrl string
+	// Reason is the justification for elevation (required for pod mode write operations)
+	Reason string
 }
 
 func NewCmdValidateEgress() *cobra.Command {
@@ -155,13 +157,16 @@ func NewCmdValidateEgress() *cobra.Command {
   # Override automatic selection of the list of endpoints to check
   osdctl network verify-egress --cluster-id my-rosa-cluster --platform hostedcluster
 
-  # Run in pod mode using Kubernetes jobs (requires cluster access)
-  osdctl network verify-egress --cluster-id my-rosa-cluster --pod-mode
+  # Run in pod mode using Kubernetes jobs (requires cluster access and elevation)
+  osdctl network verify-egress --cluster-id my-rosa-cluster --pod-mode --reason "PD-12345"
+
+  # Run in pod mode with custom namespace and reason
+  osdctl network verify-egress --cluster-id my-rosa-cluster --pod-mode --namespace my-namespace --reason "OHSS-67890"
 
   # Run in pod mode using ServiceAccount (when running inside a Kubernetes Pod)
   osdctl network verify-egress --pod-mode --region us-east-1 --namespace my-namespace
 
-  # Run in pod mode with custom namespace and kubeconfig
+  # Run in pod mode with custom namespace and kubeconfig (no elevation needed with explicit kubeconfig)
   osdctl network verify-egress --pod-mode --region us-east-1 --namespace my-namespace --kubeconfig ~/.kube/config
 
   # Run network verification without sending service logs on failure
@@ -205,6 +210,7 @@ func NewCmdValidateEgress() *cobra.Command {
 	validateEgressCmd.Flags().StringVar(&e.Namespace, "namespace", "openshift-network-diagnostics", "(optional) Kubernetes namespace to run verification pods in")
 	validateEgressCmd.Flags().BoolVar(&e.SkipServiceLog, "skip-service-log", false, "(optional) disable automatic service log sending when verification fails")
 	validateEgressCmd.Flags().StringVar(&e.hiveOcmUrl, "hive-ocm-url", "", "(optional) OCM environment URL for hive operations. Aliases: 'production', 'staging', 'integration'. If not specified, uses the same OCM environment as the target cluster.")
+	validateEgressCmd.Flags().StringVar(&e.Reason, "reason", "", "(required for pod mode with --cluster-id) The reason for elevation to perform write operations (usually an OHSS or PD ticket)")
 
 	return validateEgressCmd
 }
@@ -667,6 +673,11 @@ func (e *EgressVerification) validateInput() error {
 			return fmt.Errorf("pod mode requires either --cluster-id or --platform to determine platform type")
 		}
 
+		// Require reason for elevation when using backplane (cluster-id provided, but no explicit kubeconfig)
+		if e.ClusterId != "" && e.Reason == "" && e.KubeConfig == "" {
+			return fmt.Errorf("pod mode with --cluster-id requires --reason flag for elevation (write operations need backplane-cluster-admin). Example: --reason 'PD-12345' or --reason 'OHSS-67890'")
+		}
+
 		// For AWS platforms without cluster-id, require region
 		if e.ClusterId == "" && e.Region == "" {
 			// Check if we're dealing with an AWS platform
@@ -713,12 +724,22 @@ func (e *EgressVerification) getRestConfig(ctx context.Context) (*rest.Config, e
 		e.log.Info(ctx, "Pod mode using provided kubeconfig: %s", e.KubeConfig)
 		return restConfig, nil
 	} else if e.ClusterId != "" {
-		// Priority 2: Use backplane credentials when cluster ID is available
-		restConfig, err := k8s.NewRestConfig(e.ClusterId)
+		// Priority 2: Use backplane credentials with ELEVATION when cluster ID is available
+		var err error
+		if e.Reason != "" {
+			// Elevate as backplane-cluster-admin with reason for write operations
+			reasonMsg := fmt.Sprintf("Network verification pod mode: %s", e.Reason)
+			restConfig, err = k8s.NewRestConfigAsBackplaneClusterAdmin(e.ClusterId, reasonMsg)
+			e.log.Info(ctx, "Pod mode using elevated backplane credentials (backplane-cluster-admin) for cluster: %s", e.ClusterId)
+		} else {
+			restConfig, err = k8s.NewRestConfig(e.ClusterId)
+			e.log.Info(ctx, "Pod mode using backplane credentials for cluster: %s", e.ClusterId)
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to get REST config from backplane for cluster %s: %w", e.ClusterId, err)
 		}
-		e.log.Info(ctx, "Pod mode using backplane credentials for cluster: %s", e.ClusterId)
+
 		return restConfig, nil
 	} else if _, err := os.Stat(serviceAccountTokenPath); err == nil {
 		// Priority 3: Try in-cluster configuration when no explicit config provided

@@ -163,6 +163,21 @@ func NewRestConfig(clusterID string) (*rest.Config, error) {
 	return cfg, nil
 }
 
+// NewRestConfigAsBackplaneClusterAdmin returns a *rest.Config for the given cluster ID with backplane-cluster-admin elevation
+func NewRestConfigAsBackplaneClusterAdmin(clusterID string, elevationReasons ...string) (*rest.Config, error) {
+	bp, err := bpconfig.GetBackplaneConfiguration()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load backplane-cli config: %w", err)
+	}
+
+	cfg, err := bplogin.GetRestConfigAsUser(bp, clusterID, "backplane-cluster-admin", elevationReasons...)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
 // Create Backplane connection to a provided cluster, using a provided ocm sdk connection
 // This is intended to allow backplane connections to multiple clusters which exist in different
 // ocm environments by allowing the caller to provide an ocm connection to the function.
