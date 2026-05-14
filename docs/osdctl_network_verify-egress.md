@@ -52,13 +52,16 @@ osdctl network verify-egress [flags]
   # Override automatic selection of the list of endpoints to check
   osdctl network verify-egress --cluster-id my-rosa-cluster --platform hostedcluster
 
-  # Run in pod mode using Kubernetes jobs (requires cluster access)
-  osdctl network verify-egress --cluster-id my-rosa-cluster --pod-mode
+  # Run in pod mode using Kubernetes jobs (requires cluster access and elevation)
+  osdctl network verify-egress --cluster-id my-rosa-cluster --pod-mode --reason "PD-12345"
+
+  # Run in pod mode with custom namespace and reason
+  osdctl network verify-egress --cluster-id my-rosa-cluster --pod-mode --namespace my-namespace --reason "OHSS-67890"
 
   # Run in pod mode using ServiceAccount (when running inside a Kubernetes Pod)
   osdctl network verify-egress --pod-mode --region us-east-1 --namespace my-namespace
 
-  # Run in pod mode with custom namespace and kubeconfig
+  # Run in pod mode with custom namespace and kubeconfig (no elevation needed with explicit kubeconfig)
   osdctl network verify-egress --pod-mode --region us-east-1 --namespace my-namespace --kubeconfig ~/.kube/config
 
   # Run network verification without sending service logs on failure
@@ -94,6 +97,7 @@ osdctl network verify-egress [flags]
       --platform string           (optional) override for cloud platform/product. E.g., 'aws-classic' (OSD/ROSA Classic), 'aws-hcp' (ROSA HCP), 'aws-hcp-zeroegress', 'aws-govcloud-classic' (AWS GovCloud), or 'gcp-classic'
       --pod-mode                  (optional) run verification using Kubernetes pods instead of cloud instances
       --probe string              (optional) select the probe to be used for egress testing. Either 'curl' (default) or 'legacy' (default "curl")
+      --reason string             (required for pod mode with --cluster-id) The reason for elevation to perform write operations (usually an OHSS or PD ticket)
       --region string             (optional) AWS region, required for --pod-mode if not passing a --cluster-id
       --security-group string     (optional) security group ID override for osd-network-verifier, required if not specifying --cluster-id
       --skip-service-log          (optional) disable automatic service log sending when verification fails
