@@ -78,8 +78,7 @@ func NewCmdRoot(streams genericclioptions.IOStreams) *cobra.Command {
 				os.Exit(1)
 			}
 
-			// Checks the skipVersionCheck flag and the command being run to determine if the version check should run
-			if shouldRunVersionCheck(skipVersionCheck, cmd.Use) {
+			if !skipVersionCheck && !shouldSkipVersionCheckForCmd(cmd) {
 				versionCheck()
 			}
 		},
@@ -140,13 +139,21 @@ func shouldRunVersionCheck(skipVersionCheckFlag bool, commandName string) bool {
 }
 
 func canCommandSkipVersionCheck(commandName string) bool {
-	// Checks if the specific command is in the allowlist
 	return slice.ContainsString(getSkipVersionCommands(), commandName, nil)
+}
+
+func shouldSkipVersionCheckForCmd(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if canCommandSkipVersionCheck(c.Use) {
+			return true
+		}
+	}
+	return false
 }
 
 // Returns allowlist of commands that can skip version check
 func getSkipVersionCommands() []string {
-	return []string{"upgrade", "version"}
+	return []string{"upgrade", "version", "mcp"}
 }
 
 func versionCheck() {

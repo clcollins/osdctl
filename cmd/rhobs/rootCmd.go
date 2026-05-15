@@ -17,6 +17,11 @@ func NewCmdRhobs() *cobra.Command {
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			for c := cmd; c != nil; c = c.Parent() {
+				if c.Name() == "mcp" {
+					return nil
+				}
+			}
 			if commonOptions.clusterId == "" {
 				var err error
 
@@ -33,6 +38,7 @@ func NewCmdRhobs() *cobra.Command {
 	cmd.AddCommand(newCmdCell())
 	cmd.AddCommand(newCmdLogs())
 	cmd.AddCommand(newCmdMetrics())
+	cmd.AddCommand(newCmdMcp())
 
 	cmd.PersistentFlags().StringVarP(&commonOptions.clusterId, "cluster-id", "C", "", "Name or Internal ID of the cluster (defaults to current cluster context)")
 	cmd.PersistentFlags().StringVar(&commonOptions.hiveOcmUrl, "hive-ocm-url", "production", `OCM environment URL for hive operations - aliases: "production", "staging", "integration"`)
