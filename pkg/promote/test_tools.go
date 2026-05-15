@@ -1,4 +1,4 @@
-package utils
+package promote
 
 import (
 	"fmt"
@@ -66,6 +66,13 @@ codeComponents:
 	AppFileContentTemplateWithHotfixVersions = AppFileContentTemplate + `  hotfixVersions:
   - @hotfixVersion1@
   - @hotfixVersion2@
+`
+	AppFileContentTemplateWithBlockedVersion = AppFileContentTemplate + `  blockedVersions:
+  - @blockedVersion@
+`
+	AppFileContentTemplateWithBlockedVersions = AppFileContentTemplate + `  blockedVersions:
+  - @blockedVersion1@
+  - @blockedVersion2@
 `
 )
 
