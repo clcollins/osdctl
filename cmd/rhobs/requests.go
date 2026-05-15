@@ -238,15 +238,12 @@ func CreateRhobsFetcher(clusterKey string, rhobsFetchUse RhobsFetchUsage, hiveOc
 	isMC := false
 
 	if isHcp {
-		if rhobsFetchUse == RhobsFetchForLogs {
-			return nil, fmt.Errorf("cluster '%s' is a HCP cluster - try with its parent MC cluster", cluster.ID())
-		}
 		managementCluster, err := ocmutils.GetManagementCluster(cluster.ID())
 		if err != nil {
 			return nil, fmt.Errorf("failed to retrieve management cluster for cluster '%s': %v", cluster.ID(), err)
 		}
 		monitoredClusterId = managementCluster.ID()
-		log.Infof("Cluster %s is managed by MC cluster %s - using the MC cluster to retrieve the RHOBS cell for logs\n", cluster.ID(), monitoredClusterId)
+		log.Infof("Cluster %s is managed by MC cluster %s - using the MC cluster for RHOBS cell resolution\n", cluster.ID(), monitoredClusterId)
 	} else {
 		monitoredClusterId = cluster.ID()
 		isMC, err = ocmutils.IsManagementCluster(cluster.ID())
