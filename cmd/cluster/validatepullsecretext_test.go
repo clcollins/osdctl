@@ -193,6 +193,49 @@ func Test_recordServiceLogFailure(t *testing.T) {
 	}
 }
 
+func Test_recordServiceLogFailure_nilMap(t *testing.T) {
+	opts := &validatePullSecretExtOptions{
+		skipServiceLogs:      false,
+		failuresByServiceLog: nil,
+		log:                  logrus.New(),
+	}
+
+	opts.recordServiceLogFailure("template.json", "cloud.openshift.com")
+
+	if opts.failuresByServiceLog == nil {
+		t.Fatal("recordServiceLogFailure() did not initialize nil map")
+	}
+	if len(opts.failuresByServiceLog["template.json"]) != 1 {
+		t.Errorf("recordServiceLogFailure() expected 1 failure, got %d", len(opts.failuresByServiceLog["template.json"]))
+	}
+}
+
+func Test_sendAggregatedServiceLogs_skipFlag(t *testing.T) {
+	opts := &validatePullSecretExtOptions{
+		skipServiceLogs:      true,
+		failuresByServiceLog: map[string][]string{"template.json": {"cloud.openshift.com"}},
+		log:                  logrus.New(),
+	}
+
+	err := opts.sendAggregatedServiceLogs()
+	if err != nil {
+		t.Errorf("sendAggregatedServiceLogs() with skip flag returned error: %v", err)
+	}
+}
+
+func Test_sendAggregatedServiceLogs_noFailures(t *testing.T) {
+	opts := &validatePullSecretExtOptions{
+		skipServiceLogs:      false,
+		failuresByServiceLog: make(map[string][]string),
+		log:                  logrus.New(),
+	}
+
+	err := opts.sendAggregatedServiceLogs()
+	if err != nil {
+		t.Errorf("sendAggregatedServiceLogs() with no failures returned error: %v", err)
+	}
+}
+
 func Test_getPullSecretAuthEmail(t *testing.T) {
 	tests := []struct {
 		name          string

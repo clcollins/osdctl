@@ -34,7 +34,7 @@ const cloudAuthKey = "cloud.openshift.com"
 // Service log template URLs
 const (
 	ServiceLogMultipleSyncFailures = "https://raw.githubusercontent.com/openshift/managed-notifications/master/osd/pull_secret_multiple_sync_failures.json"
-	ServiceLogUpdatePullSecret     = "https://raw.githubusercontent.com/openshift/managed-notifications/master/osd/update_pull_secret.json"
+	ServiceLogUpdatePullSecret     = "https://raw.githubusercontent.com/openshift/managed-notifications/master/osd/update_pull_secret.json" //nolint:gosec // G101 false positive — URL, not a credential
 )
 
 type Result int
@@ -710,11 +710,11 @@ func buildTemplateParameters(failures []string) []string {
 // formatFailureDisplay formats the visual display of failures for user output
 func formatFailureDisplay(category string, failures []string) string {
 	var output strings.Builder
-	output.WriteString(fmt.Sprintf("\nPull Secret Validation Failures: %s\n", category))
-	output.WriteString(fmt.Sprintf("Found %d failure(s):\n\n", len(failures)))
+	fmt.Fprintf(&output, "\nPull Secret Validation Failures: %s\n", category)
+	fmt.Fprintf(&output, "Found %d failure(s):\n\n", len(failures))
 
 	for i, failure := range failures {
-		output.WriteString(fmt.Sprintf("  %d. %s\n", i+1, failure))
+		fmt.Fprintf(&output, "  %d. %s\n", i+1, failure)
 	}
 	output.WriteString("\n")
 
