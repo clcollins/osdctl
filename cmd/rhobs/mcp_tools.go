@@ -51,13 +51,13 @@ func registerMcpTools(s *mcp.Server) {
 		Name: "rhobs_logs",
 		Description: "Query RHOBS Loki logs for ROSA HCP infrastructure. " +
 			"Covers HCP hosted clusters, Management Clusters (MC), and Service Clusters (SC). " +
-			"Requires an MC cluster ID since logs are collected at the MC level. " +
+			"Accepts any cluster ID; HCP IDs are automatically resolved to their parent MC. " +
 			"The correct RHOBS cell is resolved automatically.",
 		Annotations: readOnlyAnnotations,
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"cluster_id":     {"type": "string", "description": "MC cluster ID or name (logs are collected at the MC level for HCP)"},
+				"cluster_id":     {"type": "string", "description": "Cluster ID or name (HCP, MC, or SC). HCP IDs auto-resolve to their parent MC."},
 				"namespace":      {"type": "string", "description": "Kubernetes namespace. Required unless query is set."},
 				"query":          {"type": "string", "description": "Raw LogQL expression (overrides namespace)"},
 				"contain_regex":  {"type": "string", "description": "Server-side regex filter (e.g., (?i)(error|timeout))"},
