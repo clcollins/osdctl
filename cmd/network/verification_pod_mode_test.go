@@ -268,10 +268,29 @@ func TestEgressVerification_ValidateInput_PodMode(t *testing.T) {
 		errorMsg  string
 	}{
 		{
-			name: "pod_mode_with_cluster_id",
+			name: "pod_mode_with_cluster_id_and_reason",
 			ev: &EgressVerification{
 				PodMode:   true,
 				ClusterId: "test-cluster",
+				Reason:    "PD-12345",
+			},
+			wantError: false,
+		},
+		{
+			name: "pod_mode_with_cluster_id_without_reason",
+			ev: &EgressVerification{
+				PodMode:   true,
+				ClusterId: "test-cluster",
+			},
+			wantError: true,
+			errorMsg:  "pod mode with --cluster-id requires --reason flag for elevation",
+		},
+		{
+			name: "pod_mode_with_cluster_id_and_kubeconfig_no_reason_needed",
+			ev: &EgressVerification{
+				PodMode:    true,
+				ClusterId:  "test-cluster",
+				KubeConfig: "/path/to/kubeconfig",
 			},
 			wantError: false,
 		},

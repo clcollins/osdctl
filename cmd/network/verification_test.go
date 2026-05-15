@@ -910,7 +910,19 @@ func TestEgressVerification_GetRestConfig(t *testing.T) {
 			expectedResult: "explicit kubeconfig should be used",
 		},
 		{
-			name: "priority_2_backplane_credentials",
+			name: "priority_2_backplane_credentials_with_elevation",
+			ev: &EgressVerification{
+				ClusterId:  "test-cluster-id",
+				Reason:     "PD-12345",
+				KubeConfig: "", // No explicit kubeconfig
+				log:        newTestLogger(t),
+			},
+			expectedLog:    "Pod mode using elevated backplane credentials (backplane-cluster-admin) for cluster: test-cluster-id",
+			expectError:    false,
+			expectedResult: "backplane credentials with elevation should be used",
+		},
+		{
+			name: "priority_2_backplane_credentials_without_elevation",
 			ev: &EgressVerification{
 				ClusterId:  "test-cluster-id",
 				KubeConfig: "", // No explicit kubeconfig
@@ -918,7 +930,7 @@ func TestEgressVerification_GetRestConfig(t *testing.T) {
 			},
 			expectedLog:    "Pod mode using backplane credentials for cluster: test-cluster-id",
 			expectError:    false,
-			expectedResult: "backplane credentials should be used",
+			expectedResult: "backplane credentials without elevation should be used",
 		},
 		{
 			name: "priority_4_default_kubeconfig_fallback",
